@@ -1,0 +1,211 @@
+---
+title: "MATH475_Project1"
+output: word_document
+date: "2024-03-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+1. Data Exploration
+
+The dataset shows the relevant data from the industrial production index and its  monthly seasonality from Janurary 1972 to August 2017
+```{r}
+library(TTR)
+library(forecast)
+df <- read.csv("candy_production.csv")
+y <- ts(df$IPG3113N, start = c(1972,1), end = c(2016, 9), freq = 12)
+plot(y)
+```
+this graph ddemonstrates an upward trend from 1972 to about 2000 alond with seasonality throughout all the years bieng the most right before halloween season as haloween to christmas is where the most candy consumption is. I would say that this graph is not stationary as it has both trend and seasonality and does not have an average mean
+
+1.1 smoothing
+
+moving average 
+
+A moving average is a statistical technique used to analyze trends by smoothing out fluctuations in data over a specified period of time. It calculates the average of a subset of data points, "moving" through the dataset, providing a clearer picture of underlying trends and patterns.
+
+```{r}
+k = 16
+y_sma = SMA(y, n = k)
+plot(y)
+lines(y_sma, col = "red")
+```
+does not do a good job of smoothing as there still appears to be a trend 
+
+```{r}
+k = 30
+y_sma = SMA(y, n = k)
+plot(y)
+lines(y_sma, col = "red")
+```
+does a better job at smoothing the series but still shows some trend
+
+```{r}
+k = 100
+y_sma = SMA(y, n = k)
+plot(y)
+lines(y_sma, col = "red")
+```
+does the best at smoothing the series out
+
+exponentioal smoothing
+
+Exponential smoothing is a forecasting method that assigns exponentially decreasing weights to past observations, with more recent data points receiving higher weights. This technique forecasts future values by iteratively updating a smoothed average based on the latest observation and the previous smoothed average, providing a balance between capturing short-term fluctuations and long-term trends in data.
+
+```{r}
+plot(y)
+w = .7
+y_ema = EMA(y, ratio = 1-w)
+lines(y_ema, col = "red")
+```
+shows a strong trend 
+
+```{r}
+plot(y)
+w = .9
+y_ema = EMA(y, ratio = 1-w)
+lines(y_ema, col = "red")
+```
+does the best job at decreasing the trend and smoothing the series. Compared against the MA, the MA does the best job at smoothing the series as exponential still shows more trend than MA 
+
+1.2 Decomposition
+
+classical decomposition
+
+Classical decomposition is a time series analysis method that breaks down a series into its fundamental components: trend, seasonality, and random variation. It aims to separate these components to better understand the underlying patterns and make more accurate forecasts by identifying and modeling each component separately.
+
+```{r}
+ourDecomposition <- decompose(y, type="additive")
+plot(ourDecomposition)
+ourDecomposition <- decompose(y, type="multiplicative")
+plot(ourDecomposition)
+```
+
+STL Decomposition
+
+Time series data is divided into trend, seasonal, and residual components using the STL Decomposition method. Its capacity to handle irregular and non-linear patterns through dynamic local regression sets it apart from classical decomposition and makes it more reliable for studying complicated time series data.
+
+```{r}
+ourDecomposition <- stl(y, s.window = "periodic")
+plot(ourDecomposition)
+```
+
+1.3 Auto Correlation 
+
+The auto-correlation function (ACF) measures the correlation between a time series and a lagged version of itself at different time lags.
+
+```{r}
+acf(y)
+```
+when lag is 0 the ACF appears to be one. According to the look of the ACF plot, the series does not appear to be stationary
+
+```{r}
+pacf(y)
+```
+
+The Partial Auto-correlation Function (PACF) measures the correlation between a time series and a lagged version of itself, while controlling for the influence of shorter lags.
+
+
+2.1 Model training
+```{r}
+p = .2 
+
+nValid <- round(.2*length(y))
+nTrain <- length(y) - nValid
+train.ts <- window(y, start = c(1972, 1), end = c(1972, nTrain))
+valid.ts <- window(y, start = c(1972, nTrain + 1), end = c(1972, nTrain + nValid))
+
+# Modeling
+# baseline models
+
+# average method: forecast by the average of the training series
+model1 = meanf(train.ts, h = nValid, level = 0)
+
+# naive: forecast by the last observation of the series
+model2 = naive(train.ts, h = nValid, level = 0)
+
+# seasonal naive: forecast by the last season
+model3 = snaive(train.ts, h = nValid, level = 0)
+
+# drift: drawing the line from the first to the last observation
+model4 = rwf(train.ts, h = nValid, level = 0, drift = TRUE)
+
+
+
+# more advanced model
+model5 = HoltWinters(train.ts, alpha=TRUE, 
+                            beta=TRUE, 
+                            gamma=TRUE)
+model6 = auto.arima(train.ts)
+```
+
+2.2 residual analysis
+```{r}
+checkresiduals(model1)
+checkresiduals(model2)
+checkresiduals(model3)
+checkresiduals(model4)
+checkresiduals(model5)
+checkresiduals(model6)
+```
+
+model 1 is not a good model as the ACF doesnt fall within the blue lines, there is no bellshape for the residuals, and the P-value is super small
+model 2 is somewhat better than 1 but I would not consider it to be good becuase the ACF doesnt fall within the blue lines and the p-value is super small. The residual does somewhat follow a bellshaped curve. 
+model 3 is getting better, but not good. The ACF is staring to fall more within the blue lines and it does follow a bell shaped curve, but the ACF makes it not good. 
+Model 4 would not be good, it is pretty much the same as model 2 but a better bell shaped curve for the residuals. 
+Model 5 is really close to being good. It appears to be stationary with a bell shaped curve for residuals, its just the ACF does not fall within the blue lines
+Model 6 would be considered good because the ACF falls within the blue lines and the residuals have a bell shapes curve. 
+
+
+2.3 testing accuracy
+```{r}
+forecast1 = forecast(model1, h = nValid, level = 0)
+forecast2 = forecast(model2, h = nValid, level = 0)
+forecast3 = forecast(model3, h = nValid, level = 0)
+forecast4 = forecast(model4, h = nValid, level = 0)
+forecast5 = forecast(model5, h = nValid, level = 0)
+forecast6 = forecast(model6, h = nValid, level = 0)
+
+
+# plotting forecast
+plot(forecast1)
+lines(valid.ts, col = 'red')
+
+plot(forecast2)
+lines(valid.ts, col = 'red')
+
+plot(forecast3)
+lines(valid.ts, col = 'red')
+
+plot(forecast4)
+lines(valid.ts, col = 'red')
+
+plot(forecast5)
+lines(valid.ts, col = 'red')
+
+plot(forecast6)
+lines(valid.ts, col = 'red')
+
+a1 = accuracy(forecast1$mean, valid.ts)
+a2 = accuracy(forecast2$mean, valid.ts)
+a3 = accuracy(forecast3$mean, valid.ts)
+a4 = accuracy(forecast4$mean, valid.ts)
+a5 = accuracy(forecast5$mean, valid.ts)
+a6 = accuracy(forecast6$mean, valid.ts)
+
+rbind(a1, a2, a3,a4, a5, a6)
+```
+
+The model that gives the lowest MAPE is model 3 at 9.91. model 1 does give a MAPE that is close to model 3 with 9.95. The model that gives the greatest MAPE is model 5 with 1351.89
+
+3. Forecasting
+```{r}
+selected_model =  snaive(y)
+new_forecast = forecast(selected_model)
+plot(new_forecast)
+```
+
